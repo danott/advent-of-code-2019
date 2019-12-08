@@ -3,6 +3,7 @@ class IntcodeComputer
   attr_reader :input
   attr_reader :output
   attr_reader :halted
+  attr_reader :paused
   attr_accessor :position
 
   def initialize(state: [], input: [])
@@ -15,19 +16,17 @@ class IntcodeComputer
   end
 
   def run
+    resume
     while instruction = next_instruction
-      execute(instruction)
+      instruction.execute(self)
     end
     self
   end
 
   def next_instruction
     return if halted
+    return if paused
     Instruction.generate(state[position, 4])
-  end
-
-  def execute(instruction)
-    instruction.execute(self)
   end
 
   def halt
@@ -35,7 +34,7 @@ class IntcodeComputer
   end
 
   def gets
-    fail "No more input provided" if input.empty?
+    return :pause if input.empty?
     input.shift
   end
 
@@ -43,13 +42,29 @@ class IntcodeComputer
     output << value
   end
 
+  def pause
+    @paused = true
+    self
+  end
+
   def diagnostic_code
     return unless halted
+    last_output
+  end
+
+  def last_output
     output.last
+  end
+
+  private
+
+  def resume
+    @paused = false
+    self
   end
 end
 
-class Paramter
+class Parameter
   def self.generate(mode:, value:)
     case mode
     when 0
@@ -97,7 +112,7 @@ class InstructionParser
     raw_parameters = state[1, 3]
     @parameters =
       parameter_modes.zip(raw_parameters).map do |mode, value|
-        Paramter.generate(mode: mode, value: value)
+        Parameter.generate(mode: mode, value: value)
       end
   end
 end
@@ -195,8 +210,13 @@ class Input
   arity 1
 
   def execute(computer)
-    computer.state[output_address] = computer.gets
-    computer.position += length
+    value = computer.gets
+    if value == :pause
+      computer.pause
+    else
+      computer.state[output_address] = value
+      computer.position += length
+    end
     self
   end
 end
