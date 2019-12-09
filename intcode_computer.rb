@@ -84,7 +84,7 @@ class ImmediateParameter
     @value = value
   end
 
-  def resolve(_state)
+  def resolve(_computer)
     value
   end
 end
@@ -96,8 +96,8 @@ class PositionParameter
     @value = value
   end
 
-  def resolve(state)
-    state[value]
+  def resolve(computer)
+    computer.state[value]
   end
 end
 
@@ -170,8 +170,8 @@ module Instruction
 
   private
 
-  def resolve_parameters(computer_state)
-    parameters.map { |p| p.resolve(computer_state) }
+  def resolve_parameters(computer)
+    parameters.map { |p| p.resolve(computer) }
   end
 end
 
@@ -182,7 +182,7 @@ class Add
   arity 3
 
   def execute(computer)
-    left, right = resolve_parameters(computer.state)
+    left, right = resolve_parameters(computer)
     computer.state[output_address] = left + right
     computer.position += length
     self
@@ -196,7 +196,7 @@ class Multiply
   arity 3
 
   def execute(computer)
-    left, right = resolve_parameters(computer.state)
+    left, right = resolve_parameters(computer)
     computer.state[output_address] = left * right
     computer.position += length
     self
@@ -228,7 +228,7 @@ class Output
   arity 1
 
   def execute(computer)
-    value = resolve_parameters(computer.state).first
+    value = resolve_parameters(computer).first
     computer.puts value
     computer.position += length
     self
@@ -242,7 +242,7 @@ class JumpIfTrue
   arity 2
 
   def execute(computer)
-    first, second = resolve_parameters(computer.state)
+    first, second = resolve_parameters(computer)
     if first.zero?
       computer.position += length
     else
@@ -258,7 +258,7 @@ class JumpIfFalse
   arity 2
 
   def execute(computer)
-    first, second = resolve_parameters(computer.state)
+    first, second = resolve_parameters(computer)
     if first.zero?
       computer.position = second
     else
@@ -274,7 +274,7 @@ class LessThan
   arity 3
 
   def execute(computer)
-    first, second = resolve_parameters(computer.state)
+    first, second = resolve_parameters(computer)
     computer.state[output_address] = first < second ? 1 : 0
     computer.position += length
   end
@@ -287,7 +287,7 @@ class Equals
   arity 3
 
   def execute(computer)
-    first, second = resolve_parameters(computer.state)
+    first, second = resolve_parameters(computer)
     computer.state[output_address] = first == second ? 1 : 0
     computer.position += length
   end
