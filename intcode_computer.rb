@@ -5,13 +5,15 @@ class IntcodeComputer
   attr_reader :halted
   attr_reader :paused
   attr_accessor :position
+  attr_accessor :relative_mode_base
 
   def initialize(state: [], input: [])
-    @state = state
-    @input = input
+    @state = state.dup
+    @input = input.dup
 
     @output = []
     @position = 0
+    @relative_mode_base = 0
     @halted = false
   end
 
@@ -42,6 +44,11 @@ class IntcodeComputer
     output << value
   end
 
+  def read(address)
+    fail "Invalid" if address < 0
+    state[address] || 0
+  end
+
   def pause
     @paused = true
     self
@@ -68,16 +75,18 @@ class Parameter
   def self.generate(mode:, value:)
     case mode
     when 0
-      PositionParameter.new(value)
+      PositionModeParameter.new(value)
     when 1
-      ImmediateParameter.new(value)
+      ImmediateModeParameter.new(value)
+    when 2
+      RelativeModeParameter.new(value)
     else
       fail "Unrecognized mode: #{mode}"
     end
   end
 end
 
-class ImmediateParameter
+class ImmediateModeParameter
   attr_reader :value
 
   def initialize(value)
@@ -87,9 +96,13 @@ class ImmediateParameter
   def resolve(_computer)
     value
   end
+
+  def output_address(_computer)
+    value
+  end
 end
 
-class PositionParameter
+class PositionModeParameter
   attr_reader :value
 
   def initialize(value)
@@ -97,7 +110,27 @@ class PositionParameter
   end
 
   def resolve(computer)
-    computer.state[value]
+    computer.read(value)
+  end
+
+  def output_address(_computer)
+    value
+  end
+end
+
+class RelativeModeParameter
+  attr_reader :value
+
+  def initialize(value)
+    @value = value
+  end
+
+  def resolve(computer)
+    computer.read(output_address(computer))
+  end
+
+  def output_address(computer)
+    computer.relative_mode_base + value
   end
 end
 
@@ -160,18 +193,38 @@ module Instruction
     @parameters = parameters
   end
 
-  def output_address
-    parameters.last.value
-  end
-
   def length
     parameters.length + 1
   end
 
-  private
-
   def resolve_parameters(computer)
-    parameters.map { |p| p.resolve(computer) }
+    ResolvedParameters.new(parameters: parameters, computer: computer)
+  end
+end
+
+class ResolvedParameters
+  attr_reader :parameters
+  attr_reader :computer
+
+  def initialize(parameters:, computer:)
+    @parameters = parameters
+    @computer = computer
+  end
+
+  def positional
+    [first, second, output_address].compact
+  end
+
+  def first
+    parameters[0].resolve(computer)
+  end
+
+  def second
+    parameters[1].resolve(computer)
+  end
+
+  def output_address
+    parameters.last.output_address(computer)
   end
 end
 
@@ -182,7 +235,7 @@ class Add
   arity 3
 
   def execute(computer)
-    left, right = resolve_parameters(computer)
+    left, right, output_address = resolve_parameters(computer).positional
     computer.state[output_address] = left + right
     computer.position += length
     self
@@ -196,7 +249,7 @@ class Multiply
   arity 3
 
   def execute(computer)
-    left, right = resolve_parameters(computer)
+    left, right, output_address = resolve_parameters(computer).positional
     computer.state[output_address] = left * right
     computer.position += length
     self
@@ -210,6 +263,7 @@ class Input
   arity 1
 
   def execute(computer)
+    output_address = resolve_parameters(computer).output_address
     value = computer.gets
     if value == :pause
       computer.pause
@@ -242,7 +296,7 @@ class JumpIfTrue
   arity 2
 
   def execute(computer)
-    first, second = resolve_parameters(computer)
+    first, second = resolve_parameters(computer).positional
     if first.zero?
       computer.position += length
     else
@@ -258,7 +312,7 @@ class JumpIfFalse
   arity 2
 
   def execute(computer)
-    first, second = resolve_parameters(computer)
+    first, second = resolve_parameters(computer).positional
     if first.zero?
       computer.position = second
     else
@@ -274,7 +328,7 @@ class LessThan
   arity 3
 
   def execute(computer)
-    first, second = resolve_parameters(computer)
+    first, second, output_address = resolve_parameters(computer).positional
     computer.state[output_address] = first < second ? 1 : 0
     computer.position += length
   end
@@ -287,8 +341,21 @@ class Equals
   arity 3
 
   def execute(computer)
-    first, second = resolve_parameters(computer)
+    first, second, output_address = resolve_parameters(computer).positional
     computer.state[output_address] = first == second ? 1 : 0
+    computer.position += length
+  end
+end
+
+class AdjustRelativeBase
+  include Instruction
+
+  opcode 9
+  arity 1
+
+  def execute(computer)
+    value = resolve_parameters(computer).first
+    computer.relative_mode_base = computer.relative_mode_base + value
     computer.position += length
   end
 end
